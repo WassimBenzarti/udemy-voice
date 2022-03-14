@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Udemy voice",
+  "version": "0.0.1",
+  "content_scripts": [
+    {
+      "matches": ["https://www.udemy.com/course/*/learn/quiz/*"],
+      "css": ["content-script/styles.css"],
+      "js": ["content-script/script.js"]
+    }
+  ]
+}
