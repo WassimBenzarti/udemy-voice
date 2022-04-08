@@ -1,3 +1,28 @@
+function createMessageDisplayer() {
+  const parent = document.querySelector(".main-content");
+  const element = document.createElement("div");
+  element.style.background = "black";
+  element.style.color = "white";
+  element.style.padding = "10px";
+  element.style.position = "fixed";
+  element.style.bottom = "24px";
+  element.style.right = "24px";
+  element.style.boxShadow = "0px 8px 10px rgba(0,0,0,.2)";
+  element.style.transition = `opacity 0.3s`;
+  parent.appendChild(element);
+  let timer;
+
+  function showMessage(message) {
+    element.style.opacity = 1;
+    element.innerHTML = message;
+    timer && clearTimeout(timer);
+    timer = setTimeout(() => {
+      element.style.opacity = 0;
+    }, 3000);
+  }
+  return { showMessage };
+}
+
 function createSpeechToText(grammar) {
   const SpeechRecognition =
     window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -10,29 +35,40 @@ function createSpeechToText(grammar) {
   speechRecognitionList.addFromString(grammar, 1);
 
   recognizer.grammars = speechRecognitionList;
-  recognizer.interimResults = false;
+  recognizer.interimResults = true;
   recognizer.maxAlternatives = 1;
 
+  let stopped = false
+  let result = ''
+  let callback = () => { }
+
   recognizer.onend = function () {
-    console.log("ended");
-    recognizer.start();
+    console.log("Recognizer ended");
+    if (result) {
+      callback(result);
+    }
+    result = "";
+
+    !stopped && recognizer.start();
   };
 
-  function onResult(callback) {
+  function onResult(_callback) {
+    callback = _callback;
     recognizer.onresult = function (e) {
-      const result = e.results[0][0].transcript;
-      console.log(e);
-      console.log(result);
-      callback(result);
+      result = e.results[0][0].transcript;
     };
   }
 
   function start() {
+    console.log("SpeechToText started");
+    stopped = false;
     recognizer.start();
   }
 
   function stop() {
-    recognizer.stop();
+    console.log("SpeechToText aborted");
+    stopped = true;
+    recognizer.abort();
   }
 
   return { onResult, start, stop };
@@ -42,17 +78,29 @@ function createTextToSpeech() {
   const speech = new SpeechSynthesisUtterance();
   speech.lang = "en";
   speech.voice = window.speechSynthesis.getVoices()[49];
-  console.log(speech);
-  function speak(text) {
+  async function _speak(text) {
     if (!text) {
       return;
     }
     speech.text = text;
+    window.speechSynthesis.cancel(speech);
     window.speechSynthesis.speak(speech);
+
+    return new Promise((resolve, reject) => {
+      speech.onend = resolve;
+      speech.onerror = reject;
+    });
+  }
+
+  async function speak(text) {
+    const sections = text.split('.');
+    for (let section of sections) {
+      await _speak(section);
+    }
   }
 
   function cancel() {
-    window.speechSynthesis.cancel(speech);
+    window.speechSynthesis.pause(speech);
   }
 
   return { speak, speech, cancel };
@@ -73,14 +121,38 @@ function loadButton() {
   }
 
   const voiceButton = document.createElement("button");
+  voiceButton.style.padding = "8px 16px";
+  voiceButton.style.border = "none";
+  voiceButton.style.borderRadius = "999px";
+  voiceButton.style.color = "rgb(146, 8, 8)";
+  voiceButton.style.fontWeight = "bold";
+  voiceButton.style.background = "rgba(230, 0, 0, .2)";
   voiceButton.innerHTML = "🎤 Speak";
 
   var textToSpeech = createTextToSpeech();
-  function runSpeech() {
-    textToSpeech.cancel();
+  async function runSpeech() {
+    if (voiceButton.innerHTML === "⏸️  Pause") {
+      textToSpeech.cancel();
+      voiceButton.innerHTML = "🎤 Speak";
+      try {
+        speechToText.start();
+      } catch (e) {
+        console.log("Warning: Already started speechToText");
+      }
+      return;
+    }
     const text = quizQuestion.textContent;
-    console.log("speaking", text);
-    textToSpeech.speak(text);
+    voiceButton.innerHTML = "⏸️  Pause";
+    speechToText.stop();
+    console.log("Start speaking", text);
+    await textToSpeech.speak(text);
+    console.log("Done speaking")
+    try {
+      speechToText.start();
+    } catch (e) {
+      console.log("Warning: Already started speechToText");
+    }
+    voiceButton.innerHTML = "🎤 Speak";
   }
 
   voiceButton.onclick = (e) => {
@@ -96,13 +168,14 @@ function loadButton() {
     }
     console.log("Added element");
 
-    runSpeech();
+    //runSpeech();
   });
 
   // Speech recognition
 
-  function clickButtonWithPurpose(dataPurpose) {
+  function clickButtonWithPurpose(dataPurposes) {
     return () => {
+      const dataPurpose = dataPurposes.find(d => document.querySelector(`[data-purpose="${d}"]`))
       const button = document.querySelector(`[data-purpose="${dataPurpose}"]`);
       button.click();
     };
@@ -121,9 +194,11 @@ function loadButton() {
     4: checkAnswer(3),
     5: checkAnswer(4),
     6: checkAnswer(5),
-    "next question": clickButtonWithPurpose("go-to-next-question"),
-    "skip question": clickButtonWithPurpose("skip-question"),
-    back: clickButtonWithPurpose("go-to-prev-question"),
+    "check answer": clickButtonWithPurpose(["next-question-button"]),
+    "next question": clickButtonWithPurpose(["go-to-next-question", "next-question-button"]),
+    "skip question": clickButtonWithPurpose(["skip-question"]),
+    back: clickButtonWithPurpose(["go-to-prev-question"]),
+    "speak": runSpeech,
   };
 
   const speechToText = createSpeechToText(
@@ -132,8 +207,11 @@ function loadButton() {
     )} ;`
   );
 
+  const messageDisplayer = createMessageDisplayer();
+
   speechToText.onResult((result) => {
-    console.log("Heard:", result);
+    // console.log("Heard:", result);
+    messageDisplayer.showMessage(result);
 
     Object.entries(actions).map(([word, action]) => {
       if (result.includes(word)) {
