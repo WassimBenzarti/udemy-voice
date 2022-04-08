@@ -2,6 +2,13 @@
 
 A chrome extension allows you to hear quiz questions automatically, to use voice command choose the answers and to navigate to the next/previous question.
 
+## What's new
+
+- Show the recognized words on the screen
+- Add support for Quizzes
+- Improve voice recognition (two times better)
+- Improve design
+
 ## Getting started
 
 1. Clone the repo locally
