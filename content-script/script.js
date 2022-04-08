@@ -6,9 +6,11 @@ function createMessageDisplayer() {
   element.style.padding = "10px";
   element.style.position = "fixed";
   element.style.bottom = "24px";
-  element.style.right = "24px";
+  element.style.left = "24px";
   element.style.boxShadow = "0px 8px 10px rgba(0,0,0,.2)";
   element.style.transition = `opacity 0.3s`;
+  element.style.zIndex = 99999;
+
   parent.appendChild(element);
   let timer;
 
@@ -36,26 +38,30 @@ function createSpeechToText(grammar) {
 
   recognizer.grammars = speechRecognitionList;
   recognizer.interimResults = true;
-  recognizer.maxAlternatives = 1;
+  recognizer.maxAlternatives = 10;
+  console.log(recognizer);
 
   let stopped = false
-  let result = ''
-  let callback = () => { }
 
   recognizer.onend = function () {
     console.log("Recognizer ended");
-    if (result) {
-      callback(result);
-    }
-    result = "";
 
     !stopped && recognizer.start();
   };
 
-  function onResult(_callback) {
-    callback = _callback;
+  function onResult(callback, instantCallback) {
     recognizer.onresult = function (e) {
-      result = e.results[0][0].transcript;
+      console.log(e.results);
+      instantCallback(e.results[0][0].transcript);
+      if (e.results[0].isFinal === false) {
+        return
+      }
+      const result = Array.from(e.results[0]).reduce((result, alternative) => {
+        result += " " + alternative.transcript
+        return result
+      }, "")
+      console.log("Doubting: ", result);
+      callback(result);
     };
   }
 
@@ -194,8 +200,8 @@ function loadButton() {
     4: checkAnswer(3),
     5: checkAnswer(4),
     6: checkAnswer(5),
-    "check answer": clickButtonWithPurpose(["next-question-button"]),
     "next question": clickButtonWithPurpose(["go-to-next-question", "next-question-button"]),
+    "check answer": clickButtonWithPurpose(["next-question-button"]),
     "skip question": clickButtonWithPurpose(["skip-question"]),
     back: clickButtonWithPurpose(["go-to-prev-question"]),
     "speak": runSpeech,
@@ -210,15 +216,15 @@ function loadButton() {
   const messageDisplayer = createMessageDisplayer();
 
   speechToText.onResult((result) => {
-    // console.log("Heard:", result);
-    messageDisplayer.showMessage(result);
-
+    const doneActions = [];
     Object.entries(actions).map(([word, action]) => {
       if (result.includes(word)) {
         console.log("Found word:", word);
         action();
       }
     });
+  }, (result) => {
+    messageDisplayer.showMessage(result);
   });
   speechToText.start();
 }
